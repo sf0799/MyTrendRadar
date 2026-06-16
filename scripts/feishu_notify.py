@@ -3,38 +3,42 @@
 import json, os, re, glob, urllib.request
 
 def extract_news(path):
-    """Try to extract news items from a file."""
     if not os.path.exists(path):
-        print(f"  Not found: {path}")
         return None
     
     with open(path, "r", encoding="utf-8", errors="replace") as f:
         content = f.read()
     
-    print(f"  Read {path} ({len(content)} bytes)")
-    
     items = []
     
-    # Try HTML li items
-    matches = re.findall(r'<li[^>]*>(.*?)</li>', content, re.DOTALL)
-    for m in matches:
-        text = re.sub(r'<[^>]+>', '', m).strip()
+    # Find news-item-title divs (TrendRadar HTML format)
+    titles = re.findall(r'class="new-item-title"[^>]*>(.*?)</div>', content, re.DOTALL)
+    for t in titles:
+        text = re.sub(r'<[^>]+>', '', t).strip()
         text = re.sub(r'&nbsp;', ' ', text)
         text = re.sub(r'\s+', ' ', text)
-        if text and len(text) > 5:
+        if text and len(text) > 3:
             items.append(text)
     
-    if items:
-        print(f"  Found {len(items)} list items")
-        return items
+    # Try RSS items too
+    rss_titles = re.findall(r'class="rss-item"[^>]*>.*?<div[^>]*class="[^"]*title[^"]*"[^>]*>(.*?)</div>', content, re.DOTALL)
+    for t in rss_titles:
+        text = re.sub(r'<[^>]+>', '', t).strip()
+        text = re.sub(r'&nbsp;', ' ', text)
+        text = re.sub(r'\s+', ' ', text)
+        if text and len(text) > 3:
+            items.append(f"[RSS] {text}")
     
-    # Try to find any text content in the HTML
-    text = re.sub(r'<[^>]+>', '\n', content)
-    text = re.sub(r'&nbsp;', ' ', text)
-    lines = [l.strip() for l in text.split('\n') if l.strip() and len(l.strip()) > 5]
-    lines = [l for l in lines if not l.startswith('{') and not l.startswith('<')]
-    print(f"  Found {len(lines)} text lines")
-    return lines[:20] if lines else None
+    # Also try standalone items
+    standalone_titles = re.findall(r'class="news-item"[^>]*>.*?<div[^>]*class="[^"]*title[^"]*"[^>]*>(.*?)</div>', content, re.DOTALL)
+    for t in standalone_titles:
+        text = re.sub(r'<[^>]+>', '', t).strip()
+        text = re.sub(r'&nbsp;', ' ', text)
+        text = re.sub(r'\s+', ' ', text)
+        if text and len(text) > 3 and text not in items:
+            items.append(text)
+    
+    return items if items else None
 
 
 def main():
@@ -47,43 +51,31 @@ def main():
         print("Missing Feishu credentials, skipping")
         return
 
-    # Debug: list output files
-    print("Checking output files:")
-    for f in glob.glob("output/**/*", recursive=True):
-        if os.path.isfile(f):
-            print(f"  {f} ({os.path.getsize(f)} bytes)")
-
-    # Try to get news from various possible file locations
+    # Find latest HTML report
     news_items = None
-    for path in sorted(glob.glob("output/html/latest/*.html")):
-        news_items = extract_news(path)
+    for pattern in ["output/html/latest/current.html", "output/html/2026-06-16/*.html"]:
+        for path in sorted(glob.glob(pattern), reverse=True):
+            items = extract_news(path)
+            if items:
+                news_items = items
+                break
         if news_items:
             break
-    
-    if not news_items:
-        for path in sorted(glob.glob("output/html/**/*.html"), reverse=True):
-            news_items = extract_news(path)
-            if news_items:
-                break
-    
-    if not news_items:
-        # Try text files
-        for path in sorted(glob.glob("output/**/*.txt"), reverse=True):
-            news_items = extract_news(path)
-            if news_items:
-                break
 
-    # Build message text
+    # Build message
     if news_items:
-        summary = "\n".join(f"• {item[:60]}{'...' if len(item) > 60 else ''}" for item in news_items[:15])
-        text = f"📡 TrendRadar 热点日报\n\n{summary}\n\n📊 共 {len(news_items)} 条热点\n查看详情: {run_url}"
+        lines = []
+        for item in news_items[:20]:
+            display = item[:50] + "..." if len(item) > 50 else item
+            lines.append(f"• {display}")
+        summary = "\n".join(lines)
+        
+        more = f"\n\n...还有 {len(news_items)-20} 条" if len(news_items) > 20 else ""
+        text = f"📡 热点日报\n\n{summary}{more}\n\n查看详情: {run_url}"
     else:
-        text = f"📡 TrendRadar 热点日报\n暂无匹配热点\n查看详情: {run_url}"
+        text = f"📡 热点日报\n暂无匹配热点\n查看详情: {run_url}"
 
-    print(f"\nMessage length: {len(text)} chars")
-    print(f"Preview: {text[:200]}")
-
-    # Get Feishu access token
+    # Send to Feishu
     req = urllib.request.Request(
         "https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal",
         data=json.dumps({"app_id": app_id, "app_secret": app_secret}).encode(),
@@ -95,29 +87,21 @@ def main():
         print("Failed to get Feishu token")
         return
 
-    # Send message
     content = json.dumps({"text": text})
-    msg = json.dumps({
-        "receive_id": chat_id,
-        "msg_type": "text",
-        "content": content
-    })
+    msg = json.dumps({"receive_id": chat_id, "msg_type": "text", "content": content})
 
     req2 = urllib.request.Request(
         "https://open.feishu.cn/open-apis/im/v1/messages?receive_id_type=chat_id",
         data=msg.encode(),
-        headers={
-            "Authorization": f"Bearer {token}",
-            "Content-Type": "application/json"
-        },
+        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
         method="POST"
     )
     resp2 = urllib.request.urlopen(req2, timeout=15)
     result = json.loads(resp2.read())
     if result.get("code") == 0:
-        print(f"✅ Feishu notification sent: {result['data']['message_id']}")
+        print(f"✅ Sent: {result['data']['message_id']}, items={len(news_items) if news_items else 0}")
     else:
-        print(f"❌ Feishu API error: {result}")
+        print(f"❌ Error: {result}")
 
 if __name__ == "__main__":
     main()
