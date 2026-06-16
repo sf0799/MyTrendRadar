@@ -174,9 +174,6 @@ jobs:
           FEISHU_APP_ID: ${{ secrets.FEISHU_BOT_APP_ID }}
           FEISHU_APP_SECRET: ${{ secrets.FEISHU_BOT_APP_SECRET }}
           FEISHU_CHAT_ID: ${{ secrets.FEISHU_CHAT_ID }}
-        run: |
-          ACCESS_TOKEN=$(curl -s -X POST "https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal" -H "Content-Type: application/json" -d '{"app_id":"'$FEISHU_APP_ID'","app_secret":"'$FEISHU_APP_SECRET'"}' | python3 -c "import sys,json;print(json.load(sys.stdin).get('tenant_access_token',''))" 2>/dev/null || echo "")
-          if [ -z "$ACCESS_TOKEN" ]; then exit 0; fi
-          MSG='{"receive_id":"'$FEISHU_CHAT_ID'","msg_type":"text","content":"{\"text\":\"📡 TrendRadar 热点日报\n\n查看详情: https://github.com/'${{ github.repository }}'/actions/runs/'${{ github.run_id }}'\"}"}'
-          curl -s -X POST "https://open.feishu.cn/open-apis/im/v1/messages?receive_id_type=chat_id" -H "Authorization: Bearer $ACCESS_TOKEN" -H "Content-Type: application/json" -d "$MSG"
+          RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: python3 scripts/feishu_notify.py
 
