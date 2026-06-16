@@ -258,12 +258,18 @@ def _send_post(app_id, app_secret, chat_id, post_content_str):
         headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
         method="POST"
     )
-    resp = urllib.request.urlopen(req, timeout=15)
-    result = json.loads(resp.read())
-    if result.get("code") == 0:
-        print(f"✅ Post sent: {result['data']['message_id']}")
-    else:
-        print(f"❌ Error: {result.get('msg', result)}")
+    try:
+        resp = urllib.request.urlopen(req, timeout=15)
+        result = json.loads(resp.read())
+        if result.get("code") == 0:
+            print(f"✅ Post sent: {result['data']['message_id']}")
+        else:
+            print(f"❌ API Error: {result.get('msg', result)}")
+    except urllib.error.HTTPError as e:
+        body = e.read().decode("utf-8", errors="replace")[:500]
+        print(f"❌ HTTP {e.code}: {body}")
+        print(f"   Content length: {len(msg)} chars")
+        raise
 
 
 if __name__ == "__main__":
