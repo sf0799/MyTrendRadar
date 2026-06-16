@@ -51,75 +51,79 @@ def extract_news_titles(html):
     return items
 
 
-def build_feishu_post(ai_sections, news_items):
-    """Build a Feishu post (rich text) message."""
-    # Feishu post format: https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-components/content-components
-    paragraphs = []
+def build_feishu_card(ai_sections, news_items):
+    """Build a Feishu interactive card message (more reliable than post)."""
+    now = datetime.utcnow().strftime("%Y-%m-%d")
+    elements = []
 
-    # Title line
-    now = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
-    paragraphs.append([
-        {"tag": "text", "text": f"📡 热点日报  |  {now}"}
-    ])
-    paragraphs.append([{"tag": "text", "text": ""}])
+    # Title header
+    elements.append({
+        "tag": "div",
+        "text": {"tag": "lark_md", "content": f"**📡 热点日报**  |  {now}"}
+    })
 
     # ── AI Analysis Section ──
     if ai_sections:
-        paragraphs.append([
-            {"tag": "text", "text": "✨ AI 热点分析", "style": ["bold"]}
-        ])
-        paragraphs.append([{"tag": "text", "text": ""}])
+        elements.append({"tag": "hr"})
+        elements.append({
+            "tag": "div",
+            "text": {"tag": "lark_md", "content": "**✨ AI 热点分析**"}
+        })
 
         for title_text, content_text in ai_sections:
-            # Section sub-title
-            paragraphs.append([
-                {"tag": "text", "text": f"▎{title_text}", "style": ["bold"]}
-            ])
-            # Content — split into short lines for readability
+            lines = []
             for line in content_text.split('\n'):
                 line = line.strip()
                 if line:
-                    # Truncate very long lines
-                    if len(line) > 120:
-                        line = line[:117] + "..."
-                    paragraphs.append([
-                        {"tag": "text", "text": line}
-                    ])
-            paragraphs.append([{"tag": "text", "text": ""}])
+                    if len(line) > 200:
+                        line = line[:197] + "..."
+                    lines.append(line)
+
+            if lines:
+                md_content = "\n".join(lines)
+                elements.append({
+                    "tag": "div",
+                    "text": {"tag": "lark_md", "content": f"**▎{title_text}**\n{md_content}"}
+                })
 
     # ── News Section ──
     if news_items:
-        paragraphs.append([
-            {"tag": "text", "text": "📋 今日热点话题", "style": ["bold"]}
-        ])
-        paragraphs.append([{"tag": "text", "text": ""}])
-
+        elements.append({"tag": "hr"})
+        news_lines = []
         for item in news_items[:25]:
             display = item[:80] + "..." if len(item) > 80 else item
-            paragraphs.append([
-                {"tag": "text", "text": f"• {display}"}
-            ])
+            news_lines.append(f"• {display}")
+
+        if news_lines:
+            md_content = "\n".join(news_lines)
+            elements.append({
+                "tag": "div",
+                "text": {"tag": "lark_md", "content": f"**📋 今日热点话题**\n{md_content}"}
+            })
 
         if len(news_items) > 25:
-            paragraphs.append([
-                {"tag": "text", "text": f"\n...还有 {len(news_items) - 25} 条"}
-            ])
+            elements.append({
+                "tag": "div",
+                "text": {"tag": "lark_md", "content": f"...还有 {len(news_items) - 25} 条"}
+            })
 
     # Footer
-    paragraphs.append([{"tag": "text", "text": ""}])
-    paragraphs.append([
-        {"tag": "text", "text": "🤖 TrendRadar 自动推送"}
-    ])
+    elements.append({"tag": "hr"})
+    elements.append({
+        "tag": "note",
+        "elements": [{"tag": "plain_text", "content": "🤖 TrendRadar 自动推送"}]
+    })
 
-    # Build post content
-    post_content = {
-        "zh_cn": {
-            "title": "📡 热点日报",
-            "content": paragraphs
-        }
+    card = {
+        "config": {"wide_screen_mode": True},
+        "header": {
+            "title": {"tag": "plain_text", "content": "📡 热点日报"},
+            "template": "blue"
+        },
+        "elements": elements
     }
 
-    return json.dumps(post_content, ensure_ascii=False)
+    return json.dumps(card, ensure_ascii=False)
 
 
 def main():
@@ -196,9 +200,9 @@ def _do_main():
         _send_text(app_id, app_secret, chat_id, text)
         return
 
-    # Build and send rich post message
-    post_data = build_feishu_post(ai_sections, news_items)
-    _send_post(app_id, app_secret, chat_id, post_data)
+    # Build and send rich card message
+    card_data = build_feishu_card(ai_sections, news_items)
+    _send_card(app_id, app_secret, chat_id, card_data)
 
 
 def _get_token(app_id, app_secret):
@@ -238,17 +242,17 @@ def _send_text(app_id, app_secret, chat_id, text):
         print(f"❌ Error: {result}")
 
 
-def _send_post(app_id, app_secret, chat_id, post_content_str):
-    """Send a rich text (post) message."""
+def _send_card(app_id, app_secret, chat_id, card_content_str):
+    """Send an interactive card message."""
     token = _get_token(app_id, app_secret)
     if not token:
         return
 
-    post_content = json.loads(post_content_str)
-    content = json.dumps({"post": post_content}, ensure_ascii=False)
+    card_content = json.loads(card_content_str)
+    content = json.dumps(card_content, ensure_ascii=False)
     msg = json.dumps({
         "receive_id": chat_id,
-        "msg_type": "post",
+        "msg_type": "interactive",
         "content": content
     }, ensure_ascii=False)
 
