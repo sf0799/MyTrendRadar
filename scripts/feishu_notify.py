@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Send TrendRadar notification to Feishu with AI analysis + hot topics."""
-import json, os, re, glob, urllib.request
+import json, os, re, glob, urllib.request, sys
 from datetime import datetime
 
 
@@ -123,6 +123,27 @@ def build_feishu_post(ai_sections, news_items):
 
 
 def main():
+    try:
+        _do_main()
+    except Exception as e:
+        import traceback
+        print(f"❌ Fatal: {e}")
+        traceback.print_exc()
+        # Try to send a fallback text message
+        try:
+            app_id = os.environ.get("FEISHU_APP_ID", "")
+            app_secret = os.environ.get("FEISHU_APP_SECRET", "")
+            chat_id = os.environ.get("FEISHU_CHAT_ID", "")
+            run_url = os.environ.get("RUN_URL", "")
+            if all([app_id, app_secret, chat_id]):
+                _send_text(app_id, app_secret, chat_id,
+                          f"📡 热点日报\n推送脚本错误: {e}\n查看详情: {run_url}")
+        except:
+            pass
+        sys.exit(1)
+
+
+def _do_main():
     app_id = os.environ.get("FEISHU_APP_ID", "")
     app_secret = os.environ.get("FEISHU_APP_SECRET", "")
     chat_id = os.environ.get("FEISHU_CHAT_ID", "")
@@ -134,8 +155,16 @@ def main():
 
     # Find latest HTML report
     html_content = None
-    for pattern in ["output/html/latest/current.html", "output/html/2026-06-16/*.html",
-                     "output/html/latest/daily.html", "output/html/latest/*.html",
+    print(f"🔍 CWD: {os.getcwd()}")
+    html_dir = "output/html"
+    if os.path.isdir(html_dir):
+        print(f"  html dirs: {[d for d in os.listdir(html_dir) if os.path.isdir(os.path.join(html_dir, d))]}")
+    else:
+        print(f"  '{html_dir}' dir not found")
+    
+    for pattern in ["output/html/latest/current.html", "output/html/latest/daily.html",
+                     "output/html/latest/*.html",
+                     "output/html/*/current.html", "output/html/*/daily.html",
                      "output/html/*/*.html"]:
         paths = sorted(glob.glob(pattern), reverse=True)
         if not paths:
