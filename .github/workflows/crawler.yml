@@ -168,3 +168,43 @@ jobs:
           S3_REGION: ${{ secrets.S3_REGION }}
           GITHUB_ACTIONS: true
         run: uv run python -m trendradar
+
+      - name: Send to Feishu
+        if: success()
+        env:
+          FEISHU_APP_ID: ${{ secrets.FEISHU_BOT_APP_ID }}
+          FEISHU_APP_SECRET: ${{ secrets.FEISHU_BOT_APP_SECRET }}
+          FEISHU_CHAT_ID: ${{ secrets.FEISHU_CHAT_ID }}
+        run: |
+          # Get access token
+          TOKEN_RESP=$(curl -s -X POST "https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal"             -H "Content-Type: application/json"             -d "{"app_id":"$FEISHU_APP_ID","app_secret":"$FEISHU_APP_SECRET"}")
+          ACCESS_TOKEN=$(echo "$TOKEN_RESP" | python3 -c "import sys,json;print(json.load(sys.stdin).get('tenant_access_token',''))")
+          
+          if [ -z "$ACCESS_TOKEN" ]; then
+            echo "Failed to get Feishu token"
+            exit 0
+          fi
+
+          # Read the latest HTML report
+          HTML_FILE=$(ls -t output/html/latest/*.html 2>/dev/null | head -1)
+          if [ -n "$HTML_FILE" ]; then
+            # Extract text summary from HTML
+            REPORT_SUMMARY=$(python3 -c "
+import re
+with open('$HTML_FILE','r',encoding='utf-8') as f:
+    html = f.read()
+# Extract title
+title_match = re.search(r'<title>(.*?)</title>', html)
+title = title_match.group(1) if title_match else '热点日报'
+# Count items
+items = len(re.findall(r'<li[^>]*>', html))
+print(f'{title} | 共 {items} 条热点')
+" 2>/dev/null || echo "热点日报")
+          else
+            REPORT_SUMMARY="热点日报"
+          fi
+
+          # Send message
+          MSG_BODY="{"receive_id":"$FEISHU_CHAT_ID","msg_type":"text","content":"{\"text\":\"📡 TrendRadar 热点日报\\n\\n$REPORT_SUMMARY\\n\\n查看详情: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}\"}"}"
+          
+          curl -s -X POST "https://open.feishu.cn/open-apis/im/v1/messages?receive_id_type=chat_id"             -H "Authorization: Bearer $ACCESS_TOKEN"             -H "Content-Type: application/json"             -d "$MSG_BODY"
