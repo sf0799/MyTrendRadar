@@ -156,9 +156,8 @@ jobs:
           GENERIC_WEBHOOK_URL: ${{ secrets.GENERIC_WEBHOOK_URL }}
           GENERIC_WEBHOOK_TEMPLATE: ${{ secrets.GENERIC_WEBHOOK_TEMPLATE }}
           # AI 配置（ai_analysis 和 ai_translation 共享模型配置）
-          # 使用 DEEPSEEK_API_KEY 作为 AI API 密钥，对应 config.yaml 中 ai.model: deepseek/deepseek-v4-flash
           AI_ANALYSIS_ENABLED: "true"
-          AI_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          AI_API_KEY: ${{ secrets.AI_API_KEY }}
           AI_MODEL: "deepseek/deepseek-v4-flash"
           AI_API_BASE: ${{ secrets.AI_API_BASE }}
           # 远程存储配置
